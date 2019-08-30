@@ -1,26 +1,28 @@
 package com.github.agourlay.cornichon.framework.examples.superHeroes.server
 
+import java.io.ByteArrayOutputStream
+
 import cats.data.Validated
 import cats.data.Validated.{ Invalid, Valid }
 import cats.implicits._
-import io.circe.{ Encoder, Json, JsonObject }
 import io.circe.generic.auto._
 import io.circe.syntax._
+import io.circe.{ Encoder, Json, JsonObject }
 import monix.eval.Task
 import monix.eval.Task._
 import monix.execution.{ CancelableFuture, Scheduler }
-import org.http4s.server.{ AuthMiddleware, Router }
-import org.http4s.server.blaze.BlazeServerBuilder
-import org.http4s.server.middleware.authentication.BasicAuth
-import org.http4s.server.middleware.authentication.BasicAuth.BasicAuthenticator
 import org.http4s._
-import org.http4s.implicits._
 import org.http4s.circe._
 import org.http4s.dsl._
+import org.http4s.implicits._
+import org.http4s.server.blaze.BlazeServerBuilder
 import org.http4s.server.middleware.GZip
+import org.http4s.server.middleware.authentication.BasicAuth
+import org.http4s.server.middleware.authentication.BasicAuth.BasicAuthenticator
+import org.http4s.server.{ AuthMiddleware, Router }
 import sangria.execution._
-import sangria.parser.QueryParser
 import sangria.marshalling.circe._
+import sangria.parser.QueryParser
 
 import scala.concurrent.Future
 import scala.util.{ Failure, Success }
@@ -36,6 +38,7 @@ class SuperHeroesHttpAPI() extends Http4sDsl[Task] {
   object SessionIdQueryParamMatcher extends QueryParamDecoderMatcher[String]("sessionId")
   object ProtectIdentityQueryParamMatcher extends OptionalQueryParamDecoderMatcher[Boolean]("protectIdentity")
   object JustNameQueryParamMatcher extends OptionalQueryParamDecoderMatcher[Boolean]("justName")
+  object ApiFormatQueryParamMatcher extends QueryParamDecoderMatcher[String]("format")
 
   private def validatedJsonResponse[A: Encoder](s: Json ⇒ Task[Response[Task]])(v: Validated[ApiError, A]): Task[Response[Task]] =
     v match {
@@ -79,8 +82,21 @@ class SuperHeroesHttpAPI() extends Http4sDsl[Task] {
   }
 
   private val superHeroesService = HttpRoutes.of[Task] {
-    case GET -> Root / "superheroes" :? SessionIdQueryParamMatcher(sessionId) ⇒
-      Ok(sm.allSuperheroes(sessionId).asJson)
+    case GET -> Root / "superheroes" :? SessionIdQueryParamMatcher(sessionId) +& ApiFormatQueryParamMatcher(format) ⇒
+      format match {
+        case "csv" ⇒
+          val allHeroes = sm.allSuperheroes(sessionId)
+
+          import kantan.csv._
+          import kantan.csv.ops._ // Automatic derivation of codecs.
+          import kantan.csv.generic._ // Automatic derivation of codecs.
+
+          val obs = new ByteArrayOutputStream()
+          obs.writeCsv[SuperHero](allHeroes, rfc)
+
+          Ok(new String(obs.toByteArray))
+        case _ ⇒ Ok(sm.allSuperheroes(sessionId).asJson)
+      }
 
     case GET -> Root / "superheroes" / name :? SessionIdQueryParamMatcher(sessionId) :? ProtectIdentityQueryParamMatcher(protectIdentity) ⇒
       validatedJsonResponse(Ok(_))(sm.superheroByName(sessionId, name, protectIdentity.getOrElse(false)))

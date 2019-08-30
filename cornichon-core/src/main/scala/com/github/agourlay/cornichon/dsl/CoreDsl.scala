@@ -10,7 +10,9 @@ import com.github.agourlay.cornichon.core.{ CornichonError, FeatureDef, Scenario
 import com.github.agourlay.cornichon.dsl.SessionSteps.{ SessionStepBuilder, SessionValuesStepBuilder }
 import com.github.agourlay.cornichon.steps.cats.EffectStep
 import com.github.agourlay.cornichon.steps.regular.DebugStep
+import com.github.agourlay.cornichon.steps.regular.assertStep.{ AssertStep, Assertion, GenericEqualityAssertion }
 import com.github.agourlay.cornichon.steps.wrapped._
+import io.circe.Decoder
 import monix.eval.Task
 
 import scala.annotation.unchecked.uncheckedVariance
@@ -181,6 +183,22 @@ trait CoreDsl extends ProvidedInstances {
         v ← sc.session.get(key, index)
         transformed ← transform(v)
       } yield s"Session content for key '${SessionKey(key, index).show}' is\n$transformed"
+    )
+
+  def assert_session[A](
+    key: String,
+    index: Option[Int] = None,
+    transform: String ⇒ A,
+    predicate: A ⇒ Boolean,
+    title: String) =
+    AssertStep(s"assert session value for key $key is $title", (sc ⇒
+      Assertion.either {
+        for {
+          v ← sc.session.get(key, index)
+        } yield {
+          GenericEqualityAssertion(predicate(transform(v)), true)
+        }
+      })
     )
 
   def print_step(message: String): Step =

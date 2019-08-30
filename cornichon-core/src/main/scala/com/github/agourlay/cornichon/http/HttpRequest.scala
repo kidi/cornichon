@@ -2,11 +2,9 @@ package com.github.agourlay.cornichon.http
 
 import cats.Show
 import cats.syntax.show._
-
 import com.github.agourlay.cornichon.util.Printing._
 import com.github.agourlay.cornichon.resolver.Resolvable
-
-import io.circe.Encoder
+import io.circe.{ Decoder, Encoder }
 
 import scala.concurrent.duration.FiniteDuration
 

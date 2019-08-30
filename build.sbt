@@ -165,7 +165,8 @@ lazy val testFramework =
         library.sbtTest,
         library.http4sServer % Test,
         library.http4sCirce % Test,
-        library.http4sDsl % Test
+        library.http4sDsl % Test,
+        library.kantanCsvGen % Test
       )
     )
 
@@ -302,6 +303,7 @@ lazy val library =
       val embeddedKafka = "2.3.0"
       val kafkaClient   = "2.3.0"
       val caffeine      = "2.8.0"
+      val kantanCsvGen  = "0.5.1"
     }
     val catsMacro     = "org.typelevel"                 %% "cats-macros"              % Version.cats
     val catsCore      = "org.typelevel"                 %% "cats-core"                % Version.cats
@@ -328,4 +330,5 @@ lazy val library =
     val kafkaClient   = "org.apache.kafka"              %  "kafka-clients"            % Version.kafkaClient
     val kafkaBroker   = "io.github.embeddedkafka"       %% "embedded-kafka"           % Version.embeddedKafka
     val caffeine      = "com.github.ben-manes.caffeine" %  "caffeine"                 % Version.caffeine
+    val kantanCsvGen  = "com.nrinaudo"                  %% "kantan.csv-generic"       % Version.kantanCsvGen
   }

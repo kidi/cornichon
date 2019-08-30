@@ -1,11 +1,13 @@
 package com.github.agourlay.cornichon.framework.examples.superHeroes
 
+import java.io.StringReader
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 
+import cats.Show
 import com.github.agourlay.cornichon.CornichonFeature
 import com.github.agourlay.cornichon.core.Step
-import com.github.agourlay.cornichon.framework.examples.superHeroes.server.{ HttpServer, SuperHeroesHttpAPI }
+import com.github.agourlay.cornichon.framework.examples.superHeroes.server.{ HttpServer, SuperHero, SuperHeroesHttpAPI }
 import com.github.agourlay.cornichon.http.HttpService
 import com.github.agourlay.cornichon.json.CornichonJson._
 import com.github.agourlay.cornichon.resolver.JsonMapper
@@ -16,6 +18,10 @@ import scala.concurrent.Await
 import scala.concurrent.duration._
 
 class SuperHeroesScenario extends CornichonFeature {
+
+  import cats.implicits.catsStdShowForList
+
+  implicit val superHeroShow = Show.show[SuperHero](_.toString)
 
   def feature =
     Feature("Cornichon feature example") {
@@ -290,9 +296,26 @@ class SuperHeroesScenario extends CornichonFeature {
         }
       }
 
+      Scenario("demonstrate csv collection features") {
+
+        When I get("/superheroes").withParams("sessionId" → "<session-id>", "format" -> "csv")
+
+        Then I show_session
+
+        Then assert session_body[List[SuperHero]](s ⇒ {
+          import kantan.csv._
+          import kantan.csv.ops._ // Enriches types with useful methods.
+          import kantan.csv.generic._ // Automatic derivation of codecs.
+
+          s.unsafeReadCsv[List, SuperHero](rfc)
+        }, csv ⇒ csv.nonEmpty, "not empty")
+      }
+
       Scenario("demonstrate collection features") {
 
-        When I get("/superheroes").withParams("sessionId" → "<session-id>")
+        When I get("/superheroes").withParams("sessionId" → "<session-id>", "format" -> "json")
+
+        Then I show_session
 
         Then assert body.asArray.isNotEmpty
 
@@ -402,7 +425,7 @@ class SuperHeroesScenario extends CornichonFeature {
 
         Then assert status.is(200)
 
-        And I get("/superheroes").withParams("sessionId" → "<session-id>")
+        And I get("/superheroes").withParams("sessionId" → "<session-id>", "format" -> "json")
 
         Then assert body.asArray.hasSize(4)
 
