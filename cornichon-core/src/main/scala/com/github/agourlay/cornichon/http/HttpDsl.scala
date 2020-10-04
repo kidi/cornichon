@@ -9,24 +9,22 @@ import cats.instances.either._
 import com.github.agourlay.cornichon.core._
 import com.github.agourlay.cornichon.dsl._
 import com.github.agourlay.cornichon.dsl.CoreDsl._
-import com.github.agourlay.cornichon.http.HttpDsl._
+import com.github.agourlay.cornichon.http.HttpDsl.{save_many_from_session_json, _}
 import com.github.agourlay.cornichon.http.steps.HeadersSteps._
 import com.github.agourlay.cornichon.http.HttpStreams._
 import com.github.agourlay.cornichon.json.CornichonJson._
 import com.github.agourlay.cornichon.json.JsonSteps.JsonStepBuilder
-import com.github.agourlay.cornichon.json.{ JsonDsl, JsonPath }
+import com.github.agourlay.cornichon.json.{JsonDsl, JsonPath}
 import com.github.agourlay.cornichon.resolver.Resolvable
-import com.github.agourlay.cornichon.steps.regular.{ DebugStep, EffectStep }
-import com.github.agourlay.cornichon.steps.cats.{ EffectStep => CEffectStep }
+import com.github.agourlay.cornichon.steps.regular.{DebugStep, EffectStep}
+import com.github.agourlay.cornichon.steps.cats.{EffectStep => CEffectStep}
 import com.github.agourlay.cornichon.http.HttpService.SessionKeys._
 import com.github.agourlay.cornichon.http.HttpService._
-import com.github.agourlay.cornichon.http.client.{ Http4sClient, HttpClient }
-import com.github.agourlay.cornichon.http.steps.{ HeadersSteps, StatusSteps }
+import com.github.agourlay.cornichon.http.client.{Http4sClient, HttpClient}
+import com.github.agourlay.cornichon.http.steps.{HeadersSteps, StatusSteps}
 import com.github.agourlay.cornichon.http.steps.StatusSteps._
 import com.github.agourlay.cornichon.util.Printing._
-
-import io.circe.{ Encoder, Json }
-
+import io.circe.{Encoder, Json}
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 
@@ -34,8 +32,8 @@ import monix.execution.Scheduler
 
 import scala.concurrent.duration._
 
-trait HttpDsl extends HttpDslOps with HttpRequestsDsl {
-  this: BaseFeature with JsonDsl with CoreDsl =>
+trait HttpBaseDsl extends HttpDslOps with HttpRequestsDsl {
+  this: BaseFeature with CoreDsl =>
 
   lazy val requestTimeout: FiniteDuration = config.requestTimeout
   lazy val baseUrl: String = config.globalBaseUrl
@@ -91,26 +89,6 @@ trait HttpDsl extends HttpDslOps with HttpRequestsDsl {
   def headers: HeadersSteps.HeadersStepBuilder.type =
     HeadersStepBuilder
 
-  //FIXME the body is expected to always contains JSON currently
-  private lazy val jsonStepBuilder = JsonStepBuilder(HttpDsl.lastBodySessionKey, HttpDsl.bodyBuilderTitle)
-  def body: JsonStepBuilder = jsonStepBuilder
-
-  def save_body(target: String): Step = HttpDsl.save_body(target)
-
-  def save_body_path(args: (String, String)*): Step =
-    save_many_from_session_json(lastResponseBodyKey) {
-      args.map {
-        case (path, target) =>
-          FromSessionSetter[Json](target, s"save path '$path' from body to key '$target'", (sc, jsonSessionValue) => {
-            for {
-              resolvedPath <- sc.fillPlaceholders(path)
-              jsonPath <- JsonPath.parse(resolvedPath)
-              json <- jsonPath.runStrict(jsonSessionValue)
-            } yield jsonStringValue(json)
-          })
-      }
-    }
-
   def save_header_value(args: (String, String)*): Step =
     save_many_from_session(lastResponseHeadersKey) {
       args.map {
@@ -147,7 +125,6 @@ trait HttpDsl extends HttpDslOps with HttpRequestsDsl {
   def show_last_status: Step = show_session(lastResponseStatusKey)
 
   def show_last_body: Step = show_session(lastResponseBodyKey)
-  def show_last_body_json: Step = show_key_as_json(lastResponseBodyKey)
 
   def show_last_headers: Step = show_session(lastResponseHeadersKey)
   def show_with_headers: Step = show_session(withHeadersKey)
@@ -162,6 +139,46 @@ trait HttpDsl extends HttpDslOps with HttpRequestsDsl {
       val rollbackStep = rollback(withHeadersKey, show = false)
       saveStep +: steps :+ rollbackStep
     }
+}
+
+trait HttpDsl extends HttpBaseDsl {
+  this: BaseFeature with JsonDsl with CoreDsl =>
+
+  //FIXME the body is expected to always contains JSON currently
+  private lazy val jsonStepBuilder = JsonStepBuilder(HttpDsl.lastBodySessionKey, HttpDsl.bodyBuilderTitle)
+  def body: JsonStepBuilder = jsonStepBuilder
+
+  def save_body(target: String): Step = HttpDsl.save_body(target)
+
+  def save_body_path(args: (String, String)*): Step =
+    save_many_from_session_json(lastResponseBodyKey) {
+      args.map {
+        case (path, target) =>
+          FromSessionSetter[Json](target, s"save path '$path' from body to key '$target'", (sc, jsonSessionValue) => {
+            for {
+              resolvedPath <- sc.fillPlaceholders(path)
+              jsonPath <- JsonPath.parse(resolvedPath)
+              json <- jsonPath.runStrict(jsonSessionValue)
+            } yield jsonStringValue(json)
+          })
+      }
+    }
+
+  def show_last_body_json: Step = show_key_as_json(lastResponseBodyKey)
+
+  def save_many_from_session_json(fromKey: String)(args: Seq[FromSessionSetter[Json]]): Step =
+    CEffectStep.fromSyncE(
+      s"${args.iterator.map(_.title).mkString(" and ")}",
+      sc => {
+        val session = sc.session
+        for {
+          sessionValue <- session.getJson(fromKey)
+          extracted <- args.iterator.map(_.trans).toList.traverse { extractor => extractor(sc, sessionValue) }
+          newSession <- args.iterator.map(_.target).zip(extracted.iterator).foldLeft(Either.right[CornichonError, Session](session))((s, tuple) => s.flatMap(_.addValue(tuple._1, tuple._2)))
+        } yield newSession
+      }
+    )
+
 }
 
 // Utils not building Steps
