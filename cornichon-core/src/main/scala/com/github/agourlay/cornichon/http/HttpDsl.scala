@@ -24,11 +24,13 @@ import com.github.agourlay.cornichon.http.client.{Http4sClient, HttpClient}
 import com.github.agourlay.cornichon.http.steps.{HeadersSteps, StatusSteps}
 import com.github.agourlay.cornichon.http.steps.StatusSteps._
 import com.github.agourlay.cornichon.util.Printing._
-import io.circe.{Encoder, Json}
+import io.circe.{ Encoder, Json }
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 
+import monix.eval.Task
 import monix.execution.Scheduler
+import org.http4s.EntityEncoder
 
 import scala.concurrent.duration._
 
@@ -47,6 +49,12 @@ trait HttpBaseDsl extends HttpDslOps with HttpRequestsDsl {
     CEffectStep(
       title = request.compactDescription,
       effect = http.requestEffectTask(request)
+    )
+
+  implicit def httpIsoStringRequestToStep[A: Show: Resolvable, B: Show: Resolvable](request: HttpIsoStringRequest[A, B])(implicit ee: EntityEncoder[Task, A]): Step =
+    CEffectStep(
+      title = request.compactDescription,
+      effect = http.isoStringRequestEffectTask(request)
     )
 
   implicit def httpStreamedRequestToStep(request: HttpStreamedRequest): Step =

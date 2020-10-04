@@ -21,8 +21,9 @@ import monix.eval.Task
 import monix.eval.Task._
 import monix.execution.Scheduler
 import org.http4s._
+import org.http4s.circe.CirceEntityCodec.circeEntityEncoder
 import org.http4s.client.blaze.BlazeClientBuilder
-import org.http4s.client.middleware.{ GZip, FollowRedirect }
+import org.http4s.client.middleware.{ FollowRedirect, GZip }
 
 import scala.concurrent.duration._
 
@@ -108,6 +109,36 @@ class Http4sClient(
             .string
             .map { decodedBody =>
               HttpResponse(
+                status = http4sResp.status.code,
+                headers = fromHttp4sHeaders(http4sResp.headers),
+                body = decodedBody
+              ).asRight[CornichonError]
+            }
+        }
+
+        val timeout = Task.delay(TimeoutErrorAfter(cReq, t).asLeft).delayExecution(t)
+
+        Task.race(cornichonResponse, timeout)
+          .map(_.fold(identity, identity))
+          .onErrorRecover { case t: Throwable => RequestError(cReq, t).asLeft }
+      }
+    )
+
+  override def runIsoStringRequest[A: Show, B: Show](cReq: HttpIsoStringRequest[A, B], t: FiniteDuration)(implicit ee: EntityEncoder[Task, A]): EitherT[Task, CornichonError, CornichonHttpResponse] =
+    parseUri(cReq.url).fold(
+      e => EitherT.left[CornichonHttpResponse](Task.now(e)),
+      uri => EitherT {
+        val req = Request[Task](toHttp4sMethod(cReq.method))
+        val completeRequest = cReq.body.fold(req)(b => req.withEntity[A](b))
+          .putHeaders(toHttp4sHeaders(cReq.headers): _*) // `withEntity` adds `Content-Type` so we set the headers afterwards to have the possibility to override it
+          .withUri(addQueryParams(uri, cReq.params))
+        val cornichonResponse = httpClient.run(completeRequest).use { http4sResp =>
+          http4sResp
+            .bodyText
+            .compile
+            .string
+            .map { decodedBody =>
+              CornichonHttpResponse(
                 status = http4sResp.status.code,
                 headers = fromHttp4sHeaders(http4sResp.headers),
                 body = decodedBody

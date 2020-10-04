@@ -9,6 +9,7 @@ import cats.instances.int._
 import cats.instances.list._
 import cats.instances.either._
 import cats.instances.string._
+import com.github.agourlay.cornichon.content_types.ContentTypeIsoString
 import org.http4s.circe._
 import com.github.agourlay.cornichon.core._
 import com.github.agourlay.cornichon.http.client.HttpClient
@@ -23,6 +24,7 @@ import io.circe.{ Encoder, Json }
 import monix.eval.Task
 import monix.eval.Task._
 import monix.execution.Scheduler
+import org.http4s.EntityEncoder
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -43,6 +45,13 @@ class HttpService(
       case Some(Right(resolvedBody)) => parseDslJson(resolvedBody).map(Some.apply)
     }
 
+  private def resolveAndParseIsoStringBody[A: Show: Resolvable](body: Option[A], scenarioContext: ScenarioContext): Either[CornichonError, Option[A]] =
+    body.map(scenarioContext.fillPlaceholders(_)) match {
+      case None                      => rightNone
+      case Some(Left(e))             => Left(e)
+      case Some(Right(resolvedBody)) => Right(Some(resolvedBody))
+    }
+
   private def resolveRequestParts[A: Show: Resolvable: Encoder](
     url: String,
     body: Option[A],
@@ -61,6 +70,24 @@ class HttpService(
       headersResolved <- scenarioContext.fillPlaceholders(allHeaders)
     } yield (completeUrlResolved, jsonBodyResolved, allParams, headersResolved)
 
+  private def resolveIsoStringRequestParts[A: Show: Resolvable](
+    url: String,
+    body: Option[A],
+    params: Seq[(String, String)],
+    headers: Seq[(String, String)],
+    ignoreFromWithHeaders: HeaderSelection)(scenarioContext: ScenarioContext): Either[CornichonError, (String, Option[A], Seq[(String, String)], List[(String, String)])] =
+    for {
+      bodyResolved <- resolveAndParseIsoStringBody(body, scenarioContext)
+      urlResolved <- scenarioContext.fillPlaceholders(url)
+      completeUrlResolved = withBaseUrl(urlResolved)
+      urlParams <- client.paramsFromUrl(completeUrlResolved)
+      explicitParams <- scenarioContext.fillPlaceholders(params)
+      allParams = urlParams ++ explicitParams
+      extractedWithHeaders <- extractWithHeadersSession(scenarioContext.session)
+      allHeaders = headers ++ ignoreHeadersSelection(extractedWithHeaders, ignoreFromWithHeaders)
+      headersResolved <- scenarioContext.fillPlaceholders(allHeaders)
+    } yield (completeUrlResolved, bodyResolved, allParams, headersResolved)
+
   private def runRequest[A: Show: Resolvable: Encoder](
     r: HttpRequest[A],
     expectedStatus: Option[Int],
@@ -71,6 +98,19 @@ class HttpService(
       resolvedRequest = HttpRequest(r.method, url, jsonBody, params, headers)
       configuredRequest = configureRequest(resolvedRequest, config)
       resp <- client.runRequest(configuredRequest, requestTimeout)
+      newSession <- EitherT.fromEither[Task](handleResponse(resp, configuredRequest.show, expectedStatus, extractor)(scenarioContext.session))
+    } yield newSession
+
+  private def runIsoStringRequest[A: Show: Resolvable, B: Show: Resolvable](
+    r: HttpIsoStringRequest[A, B],
+    expectedStatus: Option[Int],
+    extractor: ResponseExtractor,
+    ignoreFromWithHeaders: HeaderSelection)(scenarioContext: ScenarioContext)(implicit ee: EntityEncoder[Task, A]): EitherT[Task, CornichonError, Session] =
+    for {
+      (url, bodyA, params, headers) <- EitherT.fromEither[Task](resolveIsoStringRequestParts(r.url, r.body, r.params, r.headers, ignoreFromWithHeaders)(scenarioContext))
+      resolvedRequest = HttpIsoStringRequest[A, B](r.method, url, bodyA, params, headers)
+      configuredRequest = configureIsoStringRequest(resolvedRequest, config)
+      resp <- client.runIsoStringRequest(configuredRequest, requestTimeout)
       newSession <- EitherT.fromEither[Task](handleResponse(resp, configuredRequest.show, expectedStatus, extractor)(scenarioContext.session))
     } yield newSession
 
@@ -111,6 +151,13 @@ class HttpService(
     expectedStatus: Option[Int] = None,
     ignoreFromWithHeaders: HeaderSelection = SelectNone): ScenarioContext => Task[Either[CornichonError, Session]] =
     sc => runRequest(request, expectedStatus, extractor, ignoreFromWithHeaders)(sc).value
+
+  private[cornichon] def isoStringRequestEffectTask[A: Show: Resolvable, B: Show: Resolvable](
+    request: HttpIsoStringRequest[A, B],
+    extractor: ResponseExtractor = NoOpExtraction,
+    expectedStatus: Option[Int] = None,
+    ignoreFromWithHeaders: HeaderSelection = SelectNone)(implicit ee: EntityEncoder[Task, A]): ScenarioContext => Task[Either[CornichonError, Session]] =
+    sc => runIsoStringRequest(request, expectedStatus, extractor, ignoreFromWithHeaders)(sc).value
 
   def requestEffect[A: Show: Resolvable: Encoder](
     request: HttpRequest[A],
@@ -189,6 +236,17 @@ object HttpService {
     }
 
   def configureRequest[A: Show](req: HttpRequest[A], config: Config): HttpRequest[A] = {
+    if (config.traceRequests)
+      println(DebugLogInstruction(req.show, 1).colorized)
+    if (config.warnOnDuplicateHeaders && req.headers.groupBy(_._1).exists(_._2.size > 1))
+      println(WarningLogInstruction(s"\n**Warning**\nduplicate headers detected in request:\n${req.show}", 1).colorized)
+    if (config.failOnDuplicateHeaders && req.headers.groupBy(_._1).exists(_._2.size > 1))
+      throw BasicError(s"duplicate headers detected in request:\n${req.show}").toException
+    else
+      req
+  }
+
+  def configureIsoStringRequest[A: Show, B: Show](req: HttpIsoStringRequest[A, B], config: Config): HttpIsoStringRequest[A, B] = {
     if (config.traceRequests)
       println(DebugLogInstruction(req.show, 1).colorized)
     if (config.warnOnDuplicateHeaders && req.headers.groupBy(_._1).exists(_._2.size > 1))
