@@ -2,11 +2,12 @@ package com.github.agourlay.cornichon.http
 
 import cats.Show
 import cats.syntax.show._
-
+import com.github.agourlay.cornichon.content_types.ContentTypeIso.Parsable
+import com.github.agourlay.cornichon.content_types.ContentTypeIsoString
 import com.github.agourlay.cornichon.util.Printing._
 import com.github.agourlay.cornichon.resolver.Resolvable
-
 import io.circe.Encoder
+import org.http4s.{ DecodeResult, EntityDecoder, Media, MediaRange }
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -51,6 +52,29 @@ case class HttpRequest[A: Show: Resolvable: Encoder](method: HttpMethod, url: St
   }
 }
 
+case class HttpIsoStringRequest[A: Show: ContentTypeIsoString, R: Show: ContentTypeIsoString](method: HttpMethod, url: String, body: Option[A], params: Seq[(String, String)], headers: Seq[(String, String)]) extends BaseRequest {
+  def withParams(params: (String, String)*) = copy[A, R](params = params)
+  def addParams(params: (String, String)*) = copy[A, R](params = this.params ++ params)
+
+  def withHeaders(headers: (String, String)*) = copy[A, R](headers = headers)
+  def addHeaders(headers: (String, String)*) = copy[A, R](headers = this.headers ++ headers)
+
+  def withBody[B: Show: ContentTypeIsoString](body: B) = copy[B, R](body = Some(body))
+
+  def withResponseType[U: Show: ContentTypeIsoString] = copy[A, U]()
+
+  def parseResponseBody(response: String): Parsable[R] = {
+    val contentTypeIsoString = implicitly[ContentTypeIsoString[R]]
+    contentTypeIsoString.from(response)
+  }
+
+  lazy val compactDescription: String = {
+    val base = s"${method.name} $url"
+    val payloadTitle = body.fold("")(p => s" with content typed body\n${p.show}")
+    base + payloadTitle + paramsTitle + headersTitle
+  }
+}
+
 trait HttpRequestsDsl {
   import com.github.agourlay.cornichon.http.HttpMethods._
   import cats.instances.string._
@@ -62,6 +86,8 @@ trait HttpRequestsDsl {
   def post(url: String): HttpRequest[String] = HttpRequest[String](POST, url, None, Nil, Nil)
   def put(url: String): HttpRequest[String] = HttpRequest[String](PUT, url, None, Nil, Nil)
   def patch(url: String): HttpRequest[String] = HttpRequest[String](PATCH, url, None, Nil, Nil)
+  def postBody[B: Show: ContentTypeIsoString](url: String, body: B): HttpIsoStringRequest[B, B] = HttpIsoStringRequest[B, B](POST, url, Some(body), Nil, Nil)
+  def getRaw[B: Show: ContentTypeIsoString, R: Show: ContentTypeIsoString](url: String): HttpIsoStringRequest[B, R] = HttpIsoStringRequest[B, R](GET, url, None, Nil, Nil)
 }
 
 object HttpRequest extends HttpRequestsDsl {
@@ -73,6 +99,23 @@ object HttpRequest extends HttpRequestsDsl {
       val headers = if (r.headers.isEmpty) "without headers" else s"with headers ${printArrowPairs(r.headers)}"
 
       s"""|HTTP ${r.method.name} request to ${r.url}
+          |$params
+          |$headers
+          |$body""".stripMargin
+    }
+  }
+
+}
+
+object HttpIsoStringRequest extends HttpRequestsDsl {
+
+  implicit def showIsoStringRequest[A: Show, B: Show]: Show[HttpIsoStringRequest[A, B]] = new Show[HttpIsoStringRequest[A, B]] {
+    def show(r: HttpIsoStringRequest[A, B]): String = {
+      val body = r.body.fold("without body")(b => s"with content typed body\n${b.show}")
+      val params = if (r.params.isEmpty) "without parameters" else s"with parameters ${printArrowPairs(r.params)}"
+      val headers = if (r.headers.isEmpty) "without headers" else s"with headers ${printArrowPairs(r.headers)}"
+
+      s"""|HTTP ${r.method.name} iso request to ${r.url}
           |$params
           |$headers
           |$body""".stripMargin
