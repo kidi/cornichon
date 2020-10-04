@@ -1,31 +1,32 @@
 package com.github.agourlay.cornichon.json
 
 import cats.Show
-import cats.syntax.show._
-import cats.syntax.either._
-import cats.instances.string._
-import cats.syntax.traverse._
-import cats.instances.list._
 import cats.instances.either._
+import cats.instances.list._
+import cats.instances.string._
 import cats.instances.try_._
+import cats.syntax.either._
+import cats.syntax.show._
+import cats.syntax.traverse._
+import com.github.agourlay.cornichon.content_types.ContentTypeIsoString
 import com.github.agourlay.cornichon.core.{ CornichonError, Session }
 import com.github.agourlay.cornichon.dsl.DataTableParser
 import diffson._
-import diffson.lcs._
 import diffson.circe._
 import diffson.jsonpatch._
 import diffson.jsonpatch.lcsdiff.remembering._
+import diffson.lcs._
 import io.circe._
 import io.circe.syntax._
 import sangria.marshalling.MarshallingUtil._
-import sangria.parser.QueryParser
-import sangria.marshalling.queryAst._
 import sangria.marshalling.circe._
+import sangria.marshalling.queryAst._
+import sangria.parser.QueryParser
 
 import scala.annotation.switch
 import scala.util.{ Failure, Success, Try }
 
-trait CornichonJson {
+trait CornichonJson extends ContentTypeIsoString[Json] {
 
   // A DSL String can be :
   // - an object
@@ -171,6 +172,10 @@ trait CornichonJson {
     else
       Nil
   }
+
+  def from(s: String): Either[CornichonError, Json] = parseDslStringJson(s)
+
+  def to(a: Json): Either[CornichonError, String] = Either.right[CornichonError, String](jsonStringValue(a))
 }
 
 object CornichonJson extends CornichonJson {

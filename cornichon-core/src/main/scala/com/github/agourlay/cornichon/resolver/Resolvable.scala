@@ -4,12 +4,17 @@ import java.util.UUID
 
 import com.github.agourlay.cornichon.json.CornichonJson
 import cats.instances.string._
+import com.github.agourlay.cornichon.content_types.ContentTypeIso.Parsable
+import com.github.agourlay.cornichon.content_types.{ ContentTypeIso, ContentTypeIsoString }
 import io.circe.Json
 
 import scala.annotation.implicitNotFound
 
 @implicitNotFound("No instance of typeclass Resolvable found for type ${A} - this instance is required if you are trying to use ${A} as custom HTTP body type")
-trait Resolvable[A] {
+trait Resolvable[A] extends ContentTypeIsoString[A] {
+
+  override def to(b: A): Parsable[String] = ContentTypeIso.asParsed[String](toResolvableForm(b))
+  override def from(a: String): Parsable[A] = ContentTypeIso.asParsed[A](fromResolvableForm(a))
 
   def toResolvableForm(r: A): String
   def fromResolvableForm(r: String): A
