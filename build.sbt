@@ -129,13 +129,15 @@ lazy val core =
         library.circeGeneric,
         library.circeParser,
         library.diffsonCirce,
+        library.monocleCore,
         library.monixExec,
         library.monixReactive,
         library.caffeine,
         library.utest % Test,
         library.claimant % Test,
         library.scalacheck % Test,
-        library.circeTesting % Test
+        library.circeTesting % Test,
+        library.monocleMacro % Test
       )
     )
 
@@ -294,6 +296,7 @@ lazy val library =
       val openPojo      = "0.8.13"
       val decline       = "1.3.0"
       val scalaXml      = "2.0.0-M2"
+      val monocle       = "2.0.3"
     }
     val claimant      = "org.typelevel"                  %% "claimant"             % Version.claimant
     val catsCore      = "org.typelevel"                  %% "cats-core"            % Version.cats
@@ -323,4 +326,6 @@ lazy val library =
     val openPojo      = "com.openpojo"                   %  "openpojo"             % Version.openPojo
     val decline       = "com.monovore"                   %% "decline"              % Version.decline
     val scalaXml      = "org.scala-lang.modules"         %% "scala-xml"            % Version.scalaXml
+    val monocleCore   = "com.github.julien-truffaut"     %% "monocle-core"         % Version.monocle
+    val monocleMacro  = "com.github.julien-truffaut"     %% "monocle-macro"        % Version.monocle
   }
