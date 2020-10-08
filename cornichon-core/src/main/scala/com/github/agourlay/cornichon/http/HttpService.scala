@@ -24,7 +24,7 @@ import io.circe.{ Encoder, Json }
 import monix.eval.Task
 import monix.eval.Task._
 import monix.execution.Scheduler
-import org.http4s.EntityEncoder
+import org.http4s.{ EntityDecoder, EntityEncoder }
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -105,13 +105,13 @@ class HttpService(
     r: HttpIsoStringRequest[A, B],
     expectedStatus: Option[Int],
     extractor: ResponseExtractor,
-    ignoreFromWithHeaders: HeaderSelection)(scenarioContext: ScenarioContext)(implicit ee: EntityEncoder[Task, A]): EitherT[Task, CornichonError, Session] =
+    ignoreFromWithHeaders: HeaderSelection)(scenarioContext: ScenarioContext)(implicit ee: EntityEncoder[Task, A], ed: EntityDecoder[Task, B]): EitherT[Task, CornichonError, Session] =
     for {
       (url, bodyA, params, headers) <- EitherT.fromEither[Task](resolveIsoStringRequestParts(r.url, r.body, r.params, r.headers, ignoreFromWithHeaders)(scenarioContext))
       resolvedRequest = HttpIsoStringRequest[A, B](r.method, url, bodyA, params, headers)
       configuredRequest = configureIsoStringRequest(resolvedRequest, config)
       resp <- client.runIsoStringRequest(configuredRequest, requestTimeout)
-      newSession <- EitherT.fromEither[Task](handleResponse(resp, configuredRequest.show, expectedStatus, extractor)(scenarioContext.session))
+      newSession <- EitherT.fromEither[Task](handleIsoStringResponse(resp, configuredRequest.show, expectedStatus, extractor)(scenarioContext.session))
     } yield newSession
 
   private def runStreamRequest(r: HttpStreamedRequest, expectedStatus: Option[Int], extractor: ResponseExtractor)(scenarioContext: ScenarioContext) =
@@ -156,7 +156,7 @@ class HttpService(
     request: HttpIsoStringRequest[A, B],
     extractor: ResponseExtractor = NoOpExtraction,
     expectedStatus: Option[Int] = None,
-    ignoreFromWithHeaders: HeaderSelection = SelectNone)(implicit ee: EntityEncoder[Task, A]): ScenarioContext => Task[Either[CornichonError, Session]] =
+    ignoreFromWithHeaders: HeaderSelection = SelectNone)(implicit ee: EntityEncoder[Task, A], ed: EntityDecoder[Task, B]): ScenarioContext => Task[Either[CornichonError, Session]] =
     sc => runIsoStringRequest(request, expectedStatus, extractor, ignoreFromWithHeaders)(sc).value
 
   def requestEffect[A: Show: Resolvable: Encoder](
@@ -274,6 +274,16 @@ object HttpService {
         StatusNonExpected(expectedStatus, httpResponse.status, httpResponse.headers, httpResponse.body, requestDescription).asLeft
     }
 
+  def expectIsoStatusCode[B: Show](httpResponse: HttpIsoStringResponse[B], expected: Option[Int], requestDescription: String): Either[CornichonError, HttpIsoStringResponse[B]] =
+    expected match {
+      case None =>
+        httpResponse.asRight
+      case Some(expectedStatus) if httpResponse.status == expectedStatus =>
+        httpResponse.asRight
+      case Some(expectedStatus) =>
+        StatusNonExpected(expectedStatus, httpResponse.status, httpResponse.headers, httpResponse.body.fold("")(_.show), requestDescription).asLeft
+    }
+
   def fillInSessionWithResponse(session: Session, extractor: ResponseExtractor, requestDescription: String)(response: HttpResponse): Either[CornichonError, Session] = {
     val additionalExtractions = extractor match {
       case NoOpExtraction =>
@@ -290,13 +300,37 @@ object HttpService {
     }
   }
 
+  def fillInSessionIsoWithResponse[B: Show](session: Session, extractor: ResponseExtractor, requestDescription: String)(response: HttpIsoStringResponse[B]): Either[CornichonError, Session] = {
+    val additionalExtractions = extractor match {
+      case NoOpExtraction =>
+        rightNil
+      case RootExtractor(targetKey) =>
+        Right((targetKey -> response.body.fold("")(_.show)) :: Nil)
+      case PathExtractor(path, targetKey) => ???
+    }
+    additionalExtractions.flatMap { extra =>
+      val allElementsToAdd = commonIsoSessionExtractions(response, requestDescription) ++ extra
+      session.addValues(allElementsToAdd: _*)
+    }
+  }
+
   private def handleResponse(resp: HttpResponse, requestDescription: String, expectedStatus: Option[Int], extractor: ResponseExtractor)(session: Session): Either[CornichonError, Session] =
     expectStatusCode(resp, expectedStatus, requestDescription)
       .flatMap(fillInSessionWithResponse(session, extractor, requestDescription))
 
+  private def handleIsoStringResponse[B: Show: Resolvable](resp: HttpIsoStringResponse[B], requestDescription: String, expectedStatus: Option[Int], extractor: ResponseExtractor)(session: Session): Either[CornichonError, Session] =
+    expectIsoStatusCode(resp, expectedStatus, requestDescription)
+      .flatMap(fillInSessionIsoWithResponse(session, extractor, requestDescription))
+
   private def commonSessionExtractions(response: HttpResponse, requestDescription: String): List[(String, String)] =
     (lastResponseStatusKey -> response.status.toString) ::
       (lastResponseBodyKey -> response.body) ::
+      (lastResponseHeadersKey -> encodeSessionHeaders(response.headers)) ::
+      (lastResponseRequestKey -> requestDescription) :: Nil
+
+  private def commonIsoSessionExtractions[B: Show](response: HttpIsoStringResponse[B], requestDescription: String): List[(String, String)] =
+    (lastResponseStatusKey -> response.status.toString) ::
+      (lastResponseBodyKey -> response.body.fold("")(_.show)) ::
       (lastResponseHeadersKey -> encodeSessionHeaders(response.headers)) ::
       (lastResponseRequestKey -> requestDescription) :: Nil
 }

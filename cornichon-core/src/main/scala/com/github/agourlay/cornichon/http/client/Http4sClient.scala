@@ -12,6 +12,7 @@ import com.github.agourlay.cornichon.http.HttpMethods._
 import com.github.agourlay.cornichon.http._
 import com.github.agourlay.cornichon.http.HttpService._
 import com.github.agourlay.cornichon.http.HttpStreams.SSE
+import com.github.agourlay.cornichon.resolver.Resolvable
 import com.github.agourlay.cornichon.util.Caching
 import io.circe.Json
 import io.circe.generic.auto._
@@ -124,9 +125,9 @@ class Http4sClient(
       }
     )
 
-  override def runIsoStringRequest[A: Show, B: Show](cReq: HttpIsoStringRequest[A, B], t: FiniteDuration)(implicit ee: EntityEncoder[Task, A]): EitherT[Task, CornichonError, CornichonHttpResponse] =
+  override def runIsoStringRequest[A: Show, B: Show: Resolvable](cReq: HttpIsoStringRequest[A, B], t: FiniteDuration)(implicit ee: EntityEncoder[Task, A], ed: EntityDecoder[Task, B]): EitherT[Task, CornichonError, CornichonHttpIsoStringResponse[B]] =
     parseUri(cReq.url).fold(
-      e => EitherT.left[CornichonHttpResponse](Task.now(e)),
+      e => EitherT.left[CornichonHttpIsoStringResponse[B]](Task.now(e)),
       uri => EitherT {
         val req = Request[Task](toHttp4sMethod(cReq.method))
         val completeRequest = cReq.body.fold(req)(b => req.withEntity[A](b))
@@ -134,14 +135,12 @@ class Http4sClient(
           .withUri(addQueryParams(uri, cReq.params))
         val cornichonResponse = httpClient.run(completeRequest).use { http4sResp =>
           http4sResp
-            .bodyText
-            .compile
-            .string
+            .as[B]
             .map { decodedBody =>
-              CornichonHttpResponse(
+              CornichonHttpIsoStringResponse[B](
                 status = http4sResp.status.code,
                 headers = fromHttp4sHeaders(http4sResp.headers),
-                body = decodedBody
+                body = Some(decodedBody)
               ).asRight[CornichonError]
             }
         }

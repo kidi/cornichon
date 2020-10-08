@@ -30,7 +30,7 @@ import java.util.Base64
 
 import monix.eval.Task
 import monix.execution.Scheduler
-import org.http4s.EntityEncoder
+import org.http4s.{ EntityDecoder, EntityEncoder }
 
 import scala.concurrent.duration._
 
@@ -51,7 +51,7 @@ trait HttpBaseDsl extends HttpDslOps with HttpRequestsDsl {
       effect = http.requestEffectTask(request)
     )
 
-  implicit def httpIsoStringRequestToStep[A: Show: Resolvable, B: Show: Resolvable](request: HttpIsoStringRequest[A, B])(implicit ee: EntityEncoder[Task, A]): Step =
+  implicit def httpIsoStringRequestToStep[A: Show: Resolvable, B: Show: Resolvable](request: HttpIsoStringRequest[A, B])(implicit ee: EntityEncoder[Task, A], ed: EntityDecoder[Task, B]): Step =
     CEffectStep(
       title = request.compactDescription,
       effect = http.isoStringRequestEffectTask(request)
