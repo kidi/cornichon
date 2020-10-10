@@ -9,19 +9,19 @@ import cats.instances.either._
 import com.github.agourlay.cornichon.core._
 import com.github.agourlay.cornichon.dsl._
 import com.github.agourlay.cornichon.dsl.CoreDsl._
-import com.github.agourlay.cornichon.http.HttpDsl.{save_many_from_session_json, _}
+import com.github.agourlay.cornichon.http.HttpDsl.{ save_many_from_session_json, _ }
 import com.github.agourlay.cornichon.http.steps.HeadersSteps._
 import com.github.agourlay.cornichon.http.HttpStreams._
 import com.github.agourlay.cornichon.json.CornichonJson._
 import com.github.agourlay.cornichon.json.JsonSteps.JsonStepBuilder
-import com.github.agourlay.cornichon.json.{JsonDsl, JsonPath}
+import com.github.agourlay.cornichon.json.{ JsonDsl, JsonPath }
 import com.github.agourlay.cornichon.resolver.Resolvable
-import com.github.agourlay.cornichon.steps.regular.{DebugStep, EffectStep}
-import com.github.agourlay.cornichon.steps.cats.{EffectStep => CEffectStep}
+import com.github.agourlay.cornichon.steps.regular.{ DebugStep, EffectStep }
+import com.github.agourlay.cornichon.steps.cats.{ EffectStep => CEffectStep }
 import com.github.agourlay.cornichon.http.HttpService.SessionKeys._
 import com.github.agourlay.cornichon.http.HttpService._
-import com.github.agourlay.cornichon.http.client.{Http4sClient, HttpClient}
-import com.github.agourlay.cornichon.http.steps.{HeadersSteps, StatusSteps}
+import com.github.agourlay.cornichon.http.client.{ Http4sClient, HttpClient }
+import com.github.agourlay.cornichon.http.steps.{ HeadersSteps, StatusSteps }
 import com.github.agourlay.cornichon.http.steps.StatusSteps._
 import com.github.agourlay.cornichon.util.Printing._
 import io.circe.{ Encoder, Json }

@@ -125,9 +125,9 @@ class Http4sClient(
       }
     )
 
-  override def runIsoStringRequest[A: Show, B: Show: Resolvable](cReq: HttpIsoStringRequest[A, B], t: FiniteDuration)(implicit ee: EntityEncoder[Task, A], ed: EntityDecoder[Task, B]): EitherT[Task, CornichonError, CornichonHttpIsoStringResponse[B]] =
+  override def runIsoStringRequest[A: Show, B: Show: Resolvable](cReq: HttpIsoStringRequest[A, B], t: FiniteDuration)(implicit ee: EntityEncoder[Task, A], ed: EntityDecoder[Task, B]): EitherT[Task, CornichonError, HttpIsoStringResponse[B]] =
     parseUri(cReq.url).fold(
-      e => EitherT.left[CornichonHttpIsoStringResponse[B]](Task.now(e)),
+      e => EitherT.left[HttpIsoStringResponse[B]](Task.now(e)),
       uri => EitherT {
         val req = Request[Task](toHttp4sMethod(cReq.method))
         val completeRequest = cReq.body.fold(req)(b => req.withEntity[A](b))
@@ -137,7 +137,7 @@ class Http4sClient(
           http4sResp
             .as[B]
             .map { decodedBody =>
-              CornichonHttpIsoStringResponse[B](
+              HttpIsoStringResponse[B](
                 status = http4sResp.status.code,
                 headers = fromHttp4sHeaders(http4sResp.headers),
                 body = Some(decodedBody)
