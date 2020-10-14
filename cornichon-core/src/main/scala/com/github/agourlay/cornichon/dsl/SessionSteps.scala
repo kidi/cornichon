@@ -129,6 +129,18 @@ object SessionSteps {
     )
 
     def asJson: JsonStepBuilder = JsonStepBuilder(sessionKey, prettySessionKeyTitle)
+    def as(step: (String, String) => AssertStep): AssertStep = step(target, key)
+    def as[A](title: String, assertion: String => EqualityAssertion[A]): AssertStep =
+      AssertStep(
+        title = title,
+        action = sc => Assertion.either {
+          for (
+            value <- sc.session.get(key)
+          ) yield {
+            assertion(value)
+          }
+        }
+      )
     // TODO
     // def asXml
     // def asFile
