@@ -99,6 +99,7 @@ trait HttpDsl extends HttpDslOps with DslHttpRequests {
   def body_raw: SessionStepBuilder = bodyRawStepBuilder
 
   def save_body(target: String): Step = HttpDsl.save_body(target)
+  def save_extracted_from_body(target: String, extractor: String => String): Step = HttpDsl.save_extracted_from_body(target, extractor)
 
   def save_body_path(args: (String, String)*): Step =
     save_many_from_session_json(lastResponseBodyKey) {
@@ -216,7 +217,20 @@ object HttpDsl {
       effect = sc => {
         for {
           sessionValue <- sc.session.get(lastResponseBodyKey)
-          newSession <- sc.session.addValue(target, sessionValue)
+          resolvedTarget <- sc.fillPlaceholders(target)
+          newSession <- sc.session.addValue(resolvedTarget, sessionValue)
+        } yield newSession
+      }
+    )
+
+  def save_extracted_from_body(target: String, extractor: String => String): Step =
+    EffectStep.fromSyncE(
+      title = s"save extracted body to key '$target'",
+      effect = sc => {
+        for {
+          sessionValue <- sc.session.get(lastResponseBodyKey)
+          resolvedTarget <- sc.fillPlaceholders(target)
+          newSession <- sc.session.addValue(resolvedTarget, extractor(sessionValue))
         } yield newSession
       }
     )
