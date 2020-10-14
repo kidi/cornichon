@@ -4,6 +4,19 @@ case class Publisher(name: String, foundationYear: Int, location: String)
 
 case class SuperHero(name: String, realName: String, city: String, hasSuperpowers: Boolean, publisher: Publisher)
 
+object SuperHero {
+  implicit class CSV(s: SuperHero) {
+    def asCsv(): String = {
+      Seq(s.name, s.realName, s.city, s.hasSuperpowers, s.publisher).map(s => s""""$s"""").mkString(",")
+    }
+  }
+  implicit class CSVS(s: Set[SuperHero]) {
+    def asCsv(): String = {
+      s.map(_.asCsv()).mkString("\n")
+    }
+  }
+}
+
 trait ApiError {
   def id: String
   def msg: String

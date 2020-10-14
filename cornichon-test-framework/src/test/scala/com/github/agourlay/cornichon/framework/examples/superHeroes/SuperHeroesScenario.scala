@@ -10,6 +10,7 @@ import com.github.agourlay.cornichon.framework.examples.superHeroes.server.Super
 import com.github.agourlay.cornichon.http.HttpService
 import com.github.agourlay.cornichon.json.CornichonJson._
 import com.github.agourlay.cornichon.resolver.JsonMapper
+import com.github.agourlay.cornichon.steps.regular.assertStep.{ AssertStep, Assertion, CustomMessageEqualityAssertion }
 import com.github.agourlay.cornichon.steps.wrapped.ScenarioResourceStep
 import sangria.macros._
 
@@ -758,6 +759,65 @@ class SuperHeroesScenario extends CornichonFeature {
           }
           """
         )
+      }
+
+      Scenario("demonstrate non-Json assertion") {
+        And I save("favorite-superhero" -> "Batman")
+
+        When I get("/superheroes.csv/<favorite-superhero>").withParams("sessionId" -> "<session-id>")
+
+        Then assert status.is(200)
+
+        And assert body_raw.containsString("Batman")
+
+        And assert body_raw.is(""""Batman","Bruce Wayne","Gotham city","false","Publisher(DC,1934,Burbank, California)"""".stripMargin)
+
+        And assert body_raw.as((target, key) => {
+          AssertStep(
+            title = s"inspect correct csv response from session $target",
+            action = sc => Assertion.either {
+              for (
+                value <- sc.session.get(key)
+              ) yield {
+                val superheroRegExp = Seq.fill(5)(""""([^"]*)"""").mkString(",").r
+                value match {
+                  case superheroRegExp(hero, realName, city, hasPower, publisher) =>
+                    val (expectHero, expectRealName, expectCity, expectHasPower, expectPublisher) = ("Batman", "Bruce Wayne", "Gotham city", "false", "Publisher(DC,1934,Burbank, California)")
+                    val validBatman = hero == expectHero && realName == expectRealName && city == expectCity && hasPower == expectHasPower && publisher == expectPublisher
+                    CustomMessageEqualityAssertion(validBatman, true, () => s"Didn't find the batman information in extracted values:\n\t[$hero] vs [$expectHero],\n\t[$realName] vs [$expectRealName],\n\t[$city] vs [$expectCity],\n\t$hasPower vs [$expectHasPower],\n\t$publisher vs [$expectPublisher]")
+                  case _ => CustomMessageEqualityAssertion(true, false, () => s"Can't extract csv data from last response [$value]")
+                }
+              }
+            }
+          )
+        })
+
+        And assert body_raw.as[Boolean]("inspect again csv values from session response body", value => {
+          val superheroRegExp = Seq.fill(5)(""""([^"]*)"""").mkString(",").r
+          value match {
+            case superheroRegExp(hero, realName, city, hasPower, publisher) =>
+              val (expectHero, expectRealName, expectCity, expectHasPower, expectPublisher) = ("Batman", "Bruce Wayne", "Gotham city", "false", "Publisher(DC,1934,Burbank, California)")
+              val validBatman = hero == expectHero && realName == expectRealName && city == expectCity && hasPower == expectHasPower && publisher == expectPublisher
+              CustomMessageEqualityAssertion(validBatman, true, () => s"Didn't find the batman information in extracted values:\n\t[$hero] vs [$expectHero],\n\t[$realName] vs [$expectRealName],\n\t[$city] vs [$expectCity],\n\t$hasPower vs [$expectHasPower],\n\t$publisher vs [$expectPublisher]")
+            case _ => CustomMessageEqualityAssertion(true, false, () => s"Can't extract csv data from last response [$value]")
+          }
+        })
+
+        And I save_extracted_from_body("description-<favorite-superhero>", value => {
+          val superheroRegExp = Seq.fill(5)(""""([^"]*)"""").mkString(",").r
+          value match {
+            case superheroRegExp(hero, realName, city, hasPower, publisher) => s"""Once upon a time, $realName from $city became the superhero with${
+              if (!hasPower.toBoolean)
+                "out"
+            } power known as $hero in $publisher"""
+            case _ => ""
+          }
+        })
+
+        //And I show_session
+        //And I show_last_status
+        //And I show_last_body
+        //And I show_last_headers
       }
     }
 

@@ -44,6 +44,12 @@ class SuperHeroesHttpAPI() extends Http4sDsl[Task] {
       case Invalid(e) => apiErrorResponse(e)
     }
 
+  private def validatedCsvResponse(s: String => Task[Response[Task]])(v: Validated[ApiError, SuperHero]): Task[Response[Task]] =
+    v match {
+      case Valid(a)   => s(a.asCsv())
+      case Invalid(e) => apiErrorResponse(e)
+    }
+
   private def apiErrorResponse(e: ApiError): Task[Response[Task]] =
     e match {
       case SessionNotFound(_)        => NotFound(HttpError(e.msg).asJson)
@@ -83,8 +89,14 @@ class SuperHeroesHttpAPI() extends Http4sDsl[Task] {
     case GET -> Root / "superheroes" :? SessionIdQueryParamMatcher(sessionId) =>
       Ok(sm.allSuperheroes(sessionId).asJson)
 
+    case GET -> Root / "superheroes.csv" :? SessionIdQueryParamMatcher(sessionId) =>
+      Ok(sm.allSuperheroes(sessionId).asCsv())
+
     case GET -> Root / "superheroes" / name :? SessionIdQueryParamMatcher(sessionId) :? ProtectIdentityQueryParamMatcher(protectIdentity) =>
       validatedJsonResponse(Ok(_))(sm.superheroByName(sessionId, name, protectIdentity.getOrElse(false)))
+
+    case GET -> Root / "superheroes.csv" / name :? SessionIdQueryParamMatcher(sessionId) :? ProtectIdentityQueryParamMatcher(protectIdentity) =>
+      validatedCsvResponse(Ok(_))(sm.superheroByName(sessionId, name, protectIdentity.getOrElse(false)))
 
     case DELETE -> Root / "superheroes" / name :? SessionIdQueryParamMatcher(sessionId) =>
       validatedJsonResponse(Ok(_))(sm.deleteSuperhero(sessionId, name))
